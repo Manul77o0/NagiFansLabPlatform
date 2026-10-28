@@ -1,7 +1,13 @@
 ## NagiFans Lab PlatformProject
 
-This Project (will) serve multiple function.
+This project will serve multiple functions:
 
 - AuthBase
-- WebDAV(For Joplin)
-etc...
+- WebDAV (for Joplin)
+- and more.
+
+## How To DEBUG
+
+```bash
+uv run fastapi dev
+```
