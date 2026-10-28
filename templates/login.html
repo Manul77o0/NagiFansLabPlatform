@@ -7,7 +7,6 @@
     <h1><a href="{{ url_for('root') }}">NagiFans Lab</a></h1>
     <p>ログイン画面</p>
     <form action="{{ url_for('login') }}" method="post">
-        <input type="hidden" id="ref_url" name="ref_url" value="{% if ref_url %}{{ ref_url }}{% endif %}">
         {% if error %}<p>エラー：{{ error }}</p>{% endif %}
         <label for="username">ユーザー名:</label>
         <input type="text" id="username" name="username">
