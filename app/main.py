@@ -10,8 +10,8 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from .database import Base, engine
 
-# 共通系処理
 load_dotenv()
+_DEBUG = os.environ.get("DEBUG_MODE", "0") == "1"
 
 _FASTAPI_SESSION_SECRET_KEY = os.environ.get("FASTAPI_SESSION_SECRET_KEY")
 _FASTAPI_SESSION_TIMEOUT_MIN = os.environ.get("FASTAPI_SESSION_TIMEOUT_MIN")
@@ -47,3 +47,8 @@ from app.routers import auth, root, sessions
 app.include_router(root.router)
 app.include_router(sessions.router)
 app.include_router(auth.router)
+
+if _DEBUG:
+    from app.routers import debug
+
+    app.include_router(debug.router)

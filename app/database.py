@@ -1,8 +1,13 @@
+import os
+from pathlib import Path
+
+from dotenv import load_dotenv
 from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 
-DATABASE_URL = "sqlite+aiosqlite:///./test.db"
+load_dotenv(Path(__file__).resolve().parents[1] / ".env")
+DATABASE_URL = os.environ.get("DATABASE_URL")
 
 engine = create_async_engine(
     DATABASE_URL,

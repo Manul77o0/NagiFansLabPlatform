@@ -5,6 +5,14 @@
 </head>
 <body>
     <h1><a href="{{ url_for('root') }}">NagiFans Lab</a></h1>
-    <p>準備中</p>
+    <p>新規登録</p>
+    <form action="{{ url_for('register') }}" method="post">
+        {% if error %}<p>エラー：{{ error }}</p>{% endif %}
+        <label for="username">ユーザー名:</label>
+        <input type="text" id="username" name="username">
+        <label for="password">パスワード:</label>
+        <input type="password" id="password" name="password">
+        <button type="submit">登録</button>
+    </form>
 </body>
 </html>
