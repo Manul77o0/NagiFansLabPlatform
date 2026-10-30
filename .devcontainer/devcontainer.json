@@ -1,0 +1,47 @@
+{
+  "name": "Python (uv)",
+  "image": "ghcr.io/astral-sh/uv:debian",
+  "features": {
+    "ghcr.io/devcontainers/features/common-utils:2": {}
+  },
+  "mounts": [
+    {
+      "source": "uv",
+      "target": "/home/vscode/.cache/uv",
+      "type": "volume"
+    },
+    {
+      "source": "venv-${devcontainerId}",
+      "target": "${containerWorkspaceFolder}/.venv",
+      "type": "volume"
+    },
+    {
+      "source": "${localEnv:HOME}/.ssh/id_ed25519_gitsign",
+      "target": "/home/vscode/.ssh/id_ed25519_gitsign",
+      "type": "bind"
+    },
+    {
+      "source": "${localEnv:HOME}/.ssh/id_ed25519_gitsign.pub",
+      "target": "/home/vscode/.ssh/id_ed25519_gitsign.pub",
+      "type": "bind"
+    }
+  ],
+  "containerEnv": {
+    "UV_LINK_MODE": "copy"
+  },
+  "onCreateCommand": "sudo chown -R vscode:vscode /home/vscode/.cache/uv .venv",
+  "postCreateCommand": "git config --global user.signingkey /home/vscode/.ssh/id_ed25519_gitsign.pub && uv sync",
+    "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.vscode-python-envs",
+        "ms-vscode-remote.remote-containers",
+        "ms-azuretools.vscode-containers",
+        "tamasfe.even-better-toml",
+        "KevinRose.vsc-python-indent",
+        "charliermarsh.ruff"
+      ]
+    }
+  },
+  "remoteUser": "vscode"
+}
