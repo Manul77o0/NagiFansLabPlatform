@@ -23,28 +23,22 @@ alembic revision --autogenerate -m "create tables"
 alembic upgrade head
 ```
 
-## SQLite debug maintenance
+## SQLite Command
 
-The SQLite maintenance endpoints are registered only when `DEBUG=true` is set
-in the environment or `.env`. Keep the development server bound to localhost
-while they are enabled.
-
-- `GET /debug/sqlite/tables` lists application tables and row counts.
-- `POST /debug/sqlite/vacuum` runs SQLite `VACUUM`.
-- `GET /debug/sqlite/tables/{table}/rows?limit=100&offset=0` lists rows.
-- `GET|PATCH|DELETE /debug/sqlite/tables/{table}/rows/{id}` reads, updates
-  or deletes a row by its single-column primary key.
-- `POST /debug/sqlite/tables/{table}/rows` creates a row from the JSON body
-  `{"values": {"column": "value"}}` (`PATCH` takes the same body). Values are
-  written as-is, so `users.password` must already be a hash.
-- `POST /debug/sqlite/reset` deletes application data, preserving the
-  `alembic_version` table. This destructive endpoint requires the JSON body
-  `{"confirmation": "RESET DATABASE"}`.
-
-For example:
-
+Oneline Mode
 ```bash
-curl -X POST http://127.0.0.1:8000/debug/sqlite/reset \
-  -H 'Content-Type: application/json' \
-  -d '{"confirmation": "RESET DATABASE"}'
+$ sqlite3 -header -column test.db "SELECT * FROM users;"
+```
+
+Diag Mode
+```bash
+$ sqlite3 test.db
+SQLite version 3.46.1 2024-08-13 09:16:08
+Enter ".help" for usage hints.
+sqlite> .headers on
+sqlite> .mode column
+sqlite> SELECT * FROM users;
+id  name  level  email             password                                                      disabled
+--  ----  -----  ----------------  ------------------------------------------------------------  --------              
+sqlite> .quit
 ```

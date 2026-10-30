@@ -1,101 +1,155 @@
+import os
+from datetime import UTC, datetime, timedelta
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Form, Request
-from fastapi.responses import RedirectResponse
+import jwt
+from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from jwt.exceptions import InvalidTokenError
 from loguru import logger
+from pwdlib import PasswordHash
+from pydantic import BaseModel
 from sqlalchemy import select
 
-from app.common_libs.common import (
-    _clear_session,
-    _get_session,
-    _init_session,
-    get_password_hash,
-    verify_password,
-)
 from app.database import AsyncSession, get_db
-from app.main import templates
-from app.models import User
+from app.models import SystemUser
 
-router = APIRouter(
-    prefix="/auth",
-    tags=["authentication"],
-    responses={418: {"description": "I'm a teapot"}},
-)
+SECRET_KEY = os.environ.get("SECRET_KEY")
+ALGORITHM = os.environ.get("ALGORITHM")
+ACCESS_TOKEN_EXPIRE_MINUTES = int(os.environ.get("ACCESS_TOKEN_EXPIRE_MINUTES", 30))
 
-@router.get("/login")
-async def login(request: Request, error: str | None = None):
-    ref_url = request.session.get("ref_url")
-    error = request.session.get("error")
-    session = await _init_session(request)
-    if ref_url:
-        session["ref_url"] = ref_url
-    return templates.TemplateResponse(
-        request=request,
-        name="login.html",
-        context={"error": error}
+password_hash = PasswordHash.recommended()
+DUMMY_HASH = password_hash.hash("dummypassword")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+
+app = APIRouter()
+
+class Token(BaseModel):
+    access_token: str
+    token_type: str
+
+
+class TokenData(BaseModel):
+    username: str | None = None
+
+
+class User(BaseModel):
+    username: str
+    email: str | None = None
+    disabled: bool | None = None
+
+
+class UserInDB(User):
+    hashed_password: str
+
+
+def verify_password(plain_password, hashed_password):
+    return password_hash.verify(plain_password, hashed_password)
+
+
+def get_password_hash(password):
+    return password_hash.hash(password)
+
+
+async def get_user(db: AsyncSession, username: str) -> UserInDB | None:
+    result = await db.execute(
+        select(SystemUser).where(
+            SystemUser.email == f"{username}@nagifans.cc"
+        )
+    )
+    db_user = result.scalar_one_or_none()
+    if db_user is None:
+        return None
+
+    return UserInDB(
+        username=username,
+        email=db_user.email,
+        disabled=bool(db_user.disabled),
+        hashed_password=db_user.password,
     )
 
-@router.post("/login")
-async def login_post(request: Request, username: Annotated[str, Form()], password: Annotated[str, Form()], db: Annotated[AsyncSession, Depends(get_db)],):
 
-    session: dict = await _get_session(request)
-    result = await db.scalars(select(User).where(User.email == username+"@nagifans.cc"))
-    user = result.first()
+async def authenticate_user(
+    db: AsyncSession, username: str, password: str
+) -> UserInDB | bool:
+    user = await get_user(db, username)
+    # logger.debug(f'{get_password_hash("password")}')
     if not user:
-        verify_password(password)
-        logger.warning(f"Failed login attempt for username: {username}")
-        session["error"] = "認証に失敗しました"
-        return RedirectResponse(url=request.url_for("login"), status_code=303)
-    if not verify_password(password, user.password):
-        logger.warning(f"Failed login attempt for username: {username}")
-        session["error"] = "認証に失敗しました"
-        return RedirectResponse(url=request.url_for("login"), status_code=303)
+        verify_password(password, DUMMY_HASH)
+        return False
+    if not verify_password(password, user.hashed_password):
+        return False
+    return user
 
-    ref_url = request.session.get("ref_url")
-    session = await _init_session(request)
-    session["user_name"] = user.name
-    session["user_id"] = user.id
-    session["is_authenticated"] = True
-    session["error"] = None
-    logger.info(f"User logged in: {session['user_id']}")
 
-    if ref_url:
-        return RedirectResponse(url=ref_url, status_code=303)
-    return RedirectResponse(url="/", status_code=303)
+def create_access_token(data: dict, expires_delta: timedelta | None = None):
+    logger.info(f'User:{data["sub"]} Create Access Token..')
+    to_encode = data.copy()
+    if expires_delta:
+        expire = datetime.now(UTC) + expires_delta
+    else:
+        expire = datetime.now(UTC) + timedelta(minutes=15)
+    to_encode.update({"exp": expire})
+    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    return encoded_jwt
 
-@router.get("/register")
-async def register(request: Request):
-    session: dict = await _get_session(request)
-    return templates.TemplateResponse(
-        request=request,
-        name="register.html",
-        context={"error": None}
+
+async def get_current_user(token: Annotated[str, Depends(oauth2_scheme)], db: Annotated[AsyncSession, Depends(get_db)]):
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
     )
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        username = payload.get("sub")
+        if username is None:
+            raise credentials_exception
+        token_data = TokenData(username=username)
+    except InvalidTokenError as e:
+        raise credentials_exception from e
+    user = await get_user(db, username=token_data.username)
+    if user is None:
+        raise credentials_exception
+    return user
 
-@router.post("/register")
-async def register_post(request: Request, username: Annotated[str, Form()], password: Annotated[str, Form()], db: Annotated[AsyncSession, Depends(get_db)]):
-    hashed_password = get_password_hash(password)
-    new_user = User(name=username, email=username+"@nagifans.cc", password=hashed_password)
-    db.add(new_user)
-    await db.commit()
-    return RedirectResponse(url=request.url_for("login"), status_code=303)
 
-@router.get("/logout")
-async def logout(request: Request):
-    session: dict = await _get_session(request)
-    logger.info(f"User logged out: {session['user_id']}")
-    _clear_session(request)
-    return RedirectResponse(url="/", status_code=303)
+async def get_current_active_user(
+    current_user: Annotated[User, Depends(get_current_user)],
+):
+    if current_user.disabled:
+        raise HTTPException(status_code=400, detail="Inactive user")
+    return current_user
 
-@router.get("/me")
-async def me(request: Request):
-    session: dict = await _get_session(request)
-    if not session.get("is_authenticated"):
-        session["ref_url"] = str(request.url)
-        session["error"] = "認証が必要です"
-        return RedirectResponse(url=request.url_for("login"), status_code=303)
-    return templates.TemplateResponse(
-        request=request,
-        name="me.html",
-        context={"session": session}
+
+@app.post("/token")
+async def login_for_access_token(
+    form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
+    db: Annotated[AsyncSession, Depends(get_db)]
+) -> Token:
+    user = await authenticate_user(db, form_data.username, form_data.password)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect username or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token = create_access_token(
+        data={"sub": user.username}, expires_delta=access_token_expires
     )
+    return Token(access_token=access_token, token_type="bearer")
+
+
+@app.get("/users/me/")
+async def read_users_me(
+    current_user: Annotated[User, Depends(get_current_active_user)],
+) -> User:
+    return current_user
+
+
+@app.get("/users/me/items/")
+async def read_own_items(
+    current_user: Annotated[User, Depends(get_current_active_user)],
+):
+    return [{"item_id": "Foo", "owner": current_user.username}]

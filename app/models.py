@@ -3,25 +3,7 @@ from sqlalchemy import Column, Integer, String
 from .database import Base
 
 
-class User(Base):
-    """Represent a user stored in the database.
-
-    Attributes
-    ----------
-    id : int
-        The user's primary key.
-    name : str
-        The user's name.
-    level : int
-        The user's level.
-    email : str
-        The user's email.
-    password : str
-        The user's password.(hashed)
-    disabled : int
-        The user's disabled status.
-
-    """
+class SystemUser(Base):
 
     __tablename__ = "users"
 
