@@ -1,15 +1,12 @@
-import os
 from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
 
 from .database import Base, engine
 
 load_dotenv()
-_DEBUG = os.environ.get("DEBUG_MODE", 0) == 1
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -21,7 +18,6 @@ async def lifespan(app: FastAPI):
 app = FastAPI(lifespan=lifespan)
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
-templates = Jinja2Templates(directory="templates")
 
 
 # エンドポイント追加したらここに記載

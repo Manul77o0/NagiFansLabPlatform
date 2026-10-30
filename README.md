@@ -12,6 +12,12 @@ This project will serve multiple functions:
 uv run fastapi dev
 ```
 
+## Authentication
+
+`POST /token` returns a Bearer access token for API clients. The browser UI is served as a static page and calls APIs directly: it signs in with `POST /session/login` using JSON credentials, which sets an `HttpOnly`, `SameSite=Lax` cookie, then loads `/users/me/` and `/users/me/items/`. `POST /session/logout` clears the cookie. The browser never reads or stores the token in JavaScript. Bearer tokens take precedence when both credentials are present.
+
+The cookie is `Secure` by default. For local development over plain HTTP, set `COOKIE_SECURE=false`; use HTTPS and leave it enabled outside local development. Cookie-authenticated write endpoints should also enforce CSRF protection before they are added.
+
 ## AutoGenerate DB Migrate
 ```bash
 alembic revision --autogenerate -m "create tables"
