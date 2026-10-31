@@ -2,8 +2,12 @@
   "name": "Python (uv)",
   "image": "ghcr.io/astral-sh/uv:debian",
   "features": {
-    "ghcr.io/devcontainers/features/common-utils:2": {}
+    "ghcr.io/devcontainers/features/common-utils:2": {},
+    "ghcr.io/devcontainers/features/node:1": {
+      "version": "lts"
+    }
   },
+  "forwardPorts": [8000, 5173],
   "mounts": [
     {
       "source": "uv",
@@ -30,7 +34,7 @@
     "UV_LINK_MODE": "copy"
   },
   "onCreateCommand": "sudo chown -R vscode:vscode /home/vscode/.cache/uv .venv",
-  "postCreateCommand": "sudo apt-get update && sudo apt-get install -y sqlite3 && git config --global user.signingkey /home/vscode/.ssh/id_ed25519_gitsign.pub && uv sync",
+  "postCreateCommand": "git config --global gpg.format ssh && git config --global user.signingkey /home/vscode/.ssh/id_ed25519_gitsign.pub && git config --global commit.gpgsign true && cd frontend && npm install && sudo apt-get update && sudo apt-get install -y sqlite3",
     "customizations": {
     "vscode": {
       "extensions": [
@@ -39,7 +43,8 @@
         "tamasfe.even-better-toml",
         "KevinRose.vsc-python-indent",
         "charliermarsh.ruff",
-        "ms-python.vscode-pylance"
+        "ms-python.vscode-pylance",
+        "Vue.volar"
       ]
     }
   },

@@ -2,7 +2,7 @@ from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
 from fastapi import FastAPI
-from fastapi.staticfiles import StaticFiles
+from fastapi.middleware.cors import CORSMiddleware
 
 from .database import Base, engine
 
@@ -16,12 +16,15 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan)
-
-app.mount("/static", StaticFiles(directory="static"), name="static")
-
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # エンドポイント追加したらここに記載
-from app.routers import auth, root
+from app.routers import auth
 
-app.include_router(root.router)
 app.include_router(auth.app)

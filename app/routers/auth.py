@@ -80,7 +80,7 @@ async def authenticate_user(
     db: AsyncSession, username: str, password: str
 ) -> UserInDB | bool:
     user = await get_user(db, username)
-    # logger.debug(f'{get_password_hash("password")}')
+    logger.debug(f'{get_password_hash("password")}')
     if not user:
         verify_password(password, DUMMY_HASH)
         return False
@@ -187,7 +187,7 @@ async def login_for_access_token(
     return Token(access_token=access_token, token_type="bearer")
 
 
-@app.post("/session/login", status_code=status.HTTP_204_NO_CONTENT)
+@app.post("/session/login", status_code=status.HTTP_204_NO_CONTENT, include_in_schema=False)
 async def login_for_browser_session(
     credentials: BrowserLogin,
     response: Response,
@@ -215,7 +215,7 @@ async def login_for_browser_session(
     )
 
 
-@app.post("/session/logout")
+@app.post("/session/logout", include_in_schema=False)
 async def logout_browser_session(response: Response) -> dict[str, bool]:
     response.delete_cookie(
         key=ACCESS_TOKEN_COOKIE,
