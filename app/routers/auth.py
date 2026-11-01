@@ -9,7 +9,8 @@ from jwt.exceptions import InvalidTokenError
 from loguru import logger
 from pwdlib import PasswordHash
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import insert, select, update
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.database import AsyncSession, get_db
 from app.models import SystemUser
@@ -81,11 +82,28 @@ async def get_user(db: AsyncSession, username: str) -> UserInDB | None:
         hashed_password=db_user.password,
     )
 
-async def get_all_user(db: AsyncSession) -> list[User]:
+async def get_user_uid(db: AsyncSession, id: int) -> UserInDB | None:
     result = await db.execute(
         select(SystemUser).where(
-            SystemUser.disabled == 0
+            SystemUser.id == id
         )
+    )
+    db_user = result.scalar_one_or_none()
+    if db_user is None:
+        return None
+
+    return UserInDB(
+        id=db_user.id,
+        displayname=db_user.name,
+        email=db_user.email,
+        disabled=bool(db_user.disabled),
+        level=db_user.level,
+        hashed_password=db_user.password,
+    )
+
+async def get_all_user(db: AsyncSession) -> list[User]:
+    result = await db.execute(
+        select(SystemUser)
     )
     db_users = result.scalars().all()
     logger.debug(f"{db_users=}")
@@ -285,3 +303,102 @@ async def read_all_users(
                     detail="Not Enough Role",
                 )
     return await get_all_user(db)
+
+@app.post("/admin/user/register")
+async def register_user(
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    credentials: BrowserLogin,
+    db: Annotated[AsyncSession, Depends(get_db)]
+) -> User:
+    if current_user.level < 3:
+        raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Not Enough Role",
+                )
+    user = await get_user(db, credentials.username)
+    if user is None:
+        try:
+            result = await db.execute(
+                    insert(SystemUser).values(name=credentials.username, email=f"{credentials.username}@{DOMAIN}", password=get_password_hash(credentials.password), disabled=1).returning(SystemUser)
+                )
+            await db.commit()
+        except SQLAlchemyError as e:
+            logger.warn(f"Insert Users Table Error -> {e}")
+            await db.rollback()
+            raise HTTPException(status_code=400, detail="Invalid username or password") from e
+    else:
+        raise HTTPException(status_code=400, detail="Invalid username or password")
+    add_user = result.scalar_one()
+    return User(
+            id=add_user.id,
+            displayname=add_user.name,
+            email=add_user.email,
+            disabled=bool(add_user.disabled),
+            level=add_user.level,
+        )
+
+@app.post("/admin/user/{user_id}/enable")
+async def enable_user(
+    user_id: int,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db: Annotated[AsyncSession, Depends(get_db)]
+) -> User:
+    if current_user.level < 3:
+        raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Not Enough Role",
+                )
+    user = await get_user_uid(db, user_id)
+    if user is not None:
+        try:
+            result = await db.execute(
+                    update(SystemUser).where(SystemUser.id==user_id).values(disabled=0).returning(SystemUser)
+                )
+            await db.commit()
+        except SQLAlchemyError as e:
+            logger.warn(f"Update Users Table Error -> {e}")
+            await db.rollback()
+            raise
+    else:
+        raise HTTPException(status_code=400, detail="Invalid uid")
+    add_user = result.scalar_one()
+    return User(
+            id=add_user.id,
+            displayname=add_user.name,
+            email=add_user.email,
+            disabled=bool(add_user.disabled),
+            level=add_user.level,
+        )
+
+@app.post("/admin/user/{user_id}/disable")
+async def disble_user(
+    user_id: int,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db: Annotated[AsyncSession, Depends(get_db)]
+) -> User:
+    if current_user.level < 3:
+        raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Not Enough Role",
+                )
+    user = await get_user_uid(db, user_id)
+    if user is not None:
+        try:
+            result = await db.execute(
+                    update(SystemUser).where(SystemUser.id==user_id).values(disabled=1).returning(SystemUser)
+                )
+            await db.commit()
+        except SQLAlchemyError as e:
+            logger.warn(f"Update Users Table Error -> {e}")
+            await db.rollback()
+            raise
+    else:
+        raise HTTPException(status_code=400, detail="Invalid uid")
+    add_user = result.scalar_one()
+    return User(
+            id=add_user.id,
+            displayname=add_user.name,
+            email=add_user.email,
+            disabled=bool(add_user.disabled),
+            level=add_user.level,
+        )

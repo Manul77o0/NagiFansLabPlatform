@@ -7,6 +7,7 @@ const route = useRoute()
 const router = useRouter()
 
 const isLoggedIn = ref(false)
+const isUserAdmin = ref(false)
 const user = ref(null)
 const items = ref([])
 const username = ref('')
@@ -146,10 +147,11 @@ onMounted(async () => {
     <section v-else>
       <p>こんにちは、{{ user?.displayname }} さん</p>
       <button type="button" @click="handleLogout">ログアウト</button>
+      <p>使用可能なツール</p>
         <ul>
           <li v-for="(toolObj, index) in items.tools" :key="index">
             <span v-for="(path, key) in toolObj" :key="key">
-                <strong>{{ key }}</strong>: {{ path }}
+                <a :href="path">{{ key }}</a>
             </span>
           </li>
         </ul>
