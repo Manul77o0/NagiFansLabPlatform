@@ -17,6 +17,7 @@ from app.models import SystemUser
 SECRET_KEY = os.environ.get("SECRET_KEY")
 ALGORITHM = os.environ.get("ALGORITHM")
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.environ.get("ACCESS_TOKEN_EXPIRE_MINUTES", 30))
+DOMAIN = os.environ.get("DOMAIN")
 
 password_hash = PasswordHash.recommended()
 DUMMY_HASH = password_hash.hash("dummypassword")
@@ -41,8 +42,10 @@ class TokenData(BaseModel):
 
 
 class User(BaseModel):
-    username: str
+    id: int
+    displayname: str
     email: str | None = None
+    level: int | None = 0
     disabled: bool | None = None
 
 
@@ -61,7 +64,8 @@ def get_password_hash(password):
 async def get_user(db: AsyncSession, username: str) -> UserInDB | None:
     result = await db.execute(
         select(SystemUser).where(
-            SystemUser.email == f"{username}@nagifans.cc"
+            SystemUser.email == f"{username}@{DOMAIN}",
+            SystemUser.disabled == 0
         )
     )
     db_user = result.scalar_one_or_none()
@@ -69,18 +73,40 @@ async def get_user(db: AsyncSession, username: str) -> UserInDB | None:
         return None
 
     return UserInDB(
-        username=username,
+        id=db_user.id,
+        displayname=db_user.name,
         email=db_user.email,
         disabled=bool(db_user.disabled),
+        level=db_user.level,
         hashed_password=db_user.password,
     )
+
+async def get_all_user(db: AsyncSession) -> list[User]:
+    result = await db.execute(
+        select(SystemUser).where(
+            SystemUser.disabled == 0
+        )
+    )
+    db_users = result.scalars().all()
+    logger.debug(f"{db_users=}")
+    
+    return [
+        User(
+            id=db_user.id,
+            displayname=db_user.name,
+            email=db_user.email,
+            disabled=bool(db_user.disabled),
+            level=db_user.level,
+        )
+        for db_user in db_users
+    ]
 
 
 async def authenticate_user(
     db: AsyncSession, username: str, password: str
 ) -> UserInDB | bool:
     user = await get_user(db, username)
-    logger.debug(f'{get_password_hash("password")}')
+    # logger.debug(f'{get_password_hash("password")}')
     if not user:
         verify_password(password, DUMMY_HASH)
         return False
@@ -182,7 +208,7 @@ async def login_for_access_token(
         )
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
-        data={"sub": user.username}, expires_delta=access_token_expires
+        data={"sub": user.email.replace(f"@{DOMAIN}", "")}, expires_delta=access_token_expires
     )
     return Token(access_token=access_token, token_type="bearer")
 
@@ -201,7 +227,7 @@ async def login_for_browser_session(
         )
 
     access_token = create_access_token(
-        data={"sub": user.username},
+        data={"sub": user.email.replace(f"@{DOMAIN}", "")},
         expires_delta=timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES),
     )
     response.set_cookie(
@@ -238,4 +264,24 @@ async def read_users_me(
 async def read_own_items(
     current_user: Annotated[User, Depends(get_current_active_user)],
 ):
-    return [{"item_id": "Foo", "owner": current_user.username}]
+    return [{"item_id": "Foo", "owner": current_user.email}]
+
+
+@app.get("/users/me/tools/")
+async def read_usable_tools(
+    current_user: Annotated[User, Depends(get_current_active_user)],
+):
+    return {"tools": [{"items": "/items"}, {"users": "/admin/users"}], "owner": current_user.email}
+
+
+@app.get("/admin/users")
+async def read_all_users(
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db: Annotated[AsyncSession, Depends(get_db)]
+) -> list[User]:
+    if current_user.level < 3:
+        raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Not Enough Role",
+                )
+    return await get_all_user(db)
