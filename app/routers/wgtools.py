@@ -292,8 +292,13 @@ async def email_client_config(
             detail="Client email address is invalid",
         ) from exc
 
+    qr_config = "".join(
+        line
+        for line in config.splitlines(keepends=True)
+        if not line.startswith(("FwMark = ", "Table = "))
+    )
     try:
-        qr_attachment = create_qr_attachment("wireguard-client-qr.png", config)
+        qr_attachment = create_qr_attachment("wireguard-client-qr.png", qr_config)
     except DataOverflowError as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -304,6 +309,7 @@ async def email_client_config(
         [str(recipient)],
         "WireGuard クライアント設定",
         "WireGuardのクライアント設定ファイルとQRコードを添付します。"
+        "QRコードにはFwMarkとTableが含まれません。"
         "どちらも秘密鍵を含むため、安全に保管してください。",
         attachments=[attachment, qr_attachment],
     )

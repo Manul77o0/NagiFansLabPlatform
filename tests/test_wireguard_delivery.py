@@ -26,7 +26,7 @@ from qrcode import make
 from qrcode.exceptions import DataOverflowError
 
 from app.common import wg_apply
-from app.common.wg_config import generate_keypair
+from app.common.wg_config import generate_client_config, generate_keypair
 from app.routers import wgtools
 
 
@@ -159,17 +159,43 @@ class WireGuardRouteTests(unittest.IsolatedAsyncioTestCase):
                 self.assertNotIn("PostUp", apply.await_args.args[2])
                 systemd.assert_not_awaited()
 
-    async def test_email_contains_matching_config_and_qr_mime_parts(self):
-        """The email contains a config and a QR encoding that same config."""
-        config = "[Interface]\nPrivateKey = example\n"
+    async def test_email_and_download_include_routing_directives_only_in_config(self):
+        """The QR omits Linux routing directives while both files retain them."""
+        client = {
+            **generate_keypair(),
+            "Email": "client@example.com",
+            "IPAllocation": "10.0.0.13/32",
+            "AllowedIPs": "10.0.0.0/24",
+            "UseDNS": True,
+            "PresharedKey": generate_keypair()["PrivateKey"],
+        }
+        server = generate_keypair()
+        global_settings = {
+            "Endpoint": "vpn.example.com:51820",
+            "MTU": 1500,
+            "DNSServer": "10.0.0.1",
+            "PersistentKeepalive": 25,
+            "FirewallMark": "0xca6c",
+            "Table": "auto",
+        }
+        config = generate_client_config(client, server, global_settings)
+        self.assertIn("FwMark = 0xca6c\n", config)
+        self.assertIn("Table = auto\n", config)
+        qr_config = config.replace("FwMark = 0xca6c\n", "").replace(
+            "Table = auto\n", ""
+        )
+
+        async def lookup(db, entry_type, name):
+            return {"client": client, "server": server, "global": global_settings}[
+                name if entry_type == "config" else entry_type
+            ]
+
         with (
-            patch.object(
-                wgtools,
-                "get_client_config",
-                AsyncMock(return_value=({"Email": "client@example.com"}, config)),
-            ),
+            patch.object(wgtools, "get_wireguard_data", AsyncMock(side_effect=lookup)),
             patch.object(wgtools, "send_email", AsyncMock()) as send,
         ):
+            download = await wgtools.download_client_config("client", None)
+            self.assertEqual(download.body, config.encode())
             result = await wgtools.email_client_config("client", None)
             self.assertEqual(result.result, "success")
             args = send.await_args
@@ -196,12 +222,27 @@ class WireGuardRouteTests(unittest.IsolatedAsyncioTestCase):
             image = Image.open(
                 BytesIO(parts["wireguard-client-qr.png"].get_payload(decode=True))
             )
-            expected = make(config).get_image()
+            expected = make(qr_config).get_image()
             self.assertIsNone(
                 ImageChops.difference(
                     image.convert("RGB"), expected.convert("RGB")
                 ).getbbox()
             )
+
+    async def test_email_qr_keeps_config_without_routing_directives(self):
+        """A config without Linux routing directives is encoded unchanged."""
+        config = "[Interface]\nPrivateKey = example\n\n[Peer]\nPublicKey = example\n"
+        with (
+            patch.object(
+                wgtools,
+                "get_client_config",
+                AsyncMock(return_value=({"Email": "client@example.com"}, config)),
+            ),
+            patch.object(wgtools, "create_qr_attachment") as qr,
+            patch.object(wgtools, "send_email", AsyncMock()),
+        ):
+            await wgtools.email_client_config("client", None)
+            qr.assert_called_once_with("wireguard-client-qr.png", config)
 
     async def test_qr_overflow_does_not_send_email(self):
         """An oversized QR payload produces an error without sending a partial email."""

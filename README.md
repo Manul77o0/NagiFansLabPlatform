@@ -44,9 +44,10 @@ with `wg show <interface> dump` on the API host. The API process must be able to
 query the configured WireGuard interface; the view lists registered clients
 and estimates connectivity from a handshake within the last three minutes.
 
-Client configuration emails include a `.conf` file and a PNG QR code with the
-same configuration. Both contain private keys: use a trusted mail transport,
-verify the recipient, and store or delete both attachments securely.
+Client configuration emails include a `.conf` file and a PNG QR code. The QR
+code omits the Linux-specific `FwMark` and `Table` directives, which remain in
+the `.conf` file when configured. Both contain private keys: use a trusted mail
+transport, verify the recipient, and store or delete both attachments securely.
 
 ## Authentication
 
