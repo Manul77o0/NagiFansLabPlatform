@@ -6,6 +6,9 @@ services:
     command: sleep infinity
     volumes:
       - ..:/workspace:cached
+      - ./wireguard-test/data:/run/wireguard-test
+    environment:
+      WG_TEST_APPLY_DIR: /run/wireguard-test
 
   mail:
     image: schickling/mailcatcher

@@ -197,3 +197,13 @@ async def check_admin(
                     detail="Not Enough Role",
                 )
     return True
+
+async def check_write(
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> bool:
+    if current_user.level < 2:
+        raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Not Enough Role",
+                )
+    return True

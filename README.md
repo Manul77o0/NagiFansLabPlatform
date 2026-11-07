@@ -11,11 +11,37 @@ This project will serve multiple functions:
 uv run fastapi dev
 ```
 
-## MailCatcher
+See [local integration tests](docs/local-integration-tests.md) for MailCatcher
+and WireGuard test instructions.
 
-The Dev Container starts MailCatcher with Docker Compose. Open
-<http://localhost:1080> to view captured email. Configure applications running
-inside the Compose network to use `mail:1025` as their SMTP server.
+For a non-container Ubuntu 24.04 deployment and initial administrator setup,
+see [production deployment](docs/production-ubuntu.md).
+
+## WireGuard production application
+
+When `WG_TEST_APPLY_DIR` is unset, applying server settings writes
+`/etc/wireguard/<interface>.conf` with mode `0600`, then runs
+`systemctl --no-ask-password restart wg-quick@<interface>.service`. The API
+must run on the systemd host with permission to write that existing directory and
+restart the unit without an interactive prompt. Install WireGuard and the
+`wg-quick@.service` unit beforehand, and restrict directory access to trusted
+users. A service restart may interrupt active
+tunnels. The API reports a failure if writing or restarting fails; the new
+file may already be on disk, and the service may be stopped or still changing
+after a failure or timeout. Check its status and restore a known-good config
+manually if necessary.
+
+The configured server hooks execute with the privileges of `wg-quick` (usually
+root). Users with write access can change these hooks, which execute when an
+administrator applies the settings. Grant WireGuard write and admin access
+only to trusted users; protect the API and config directory accordingly.
+`systemctl` cannot control a separate host from an ordinary container; do not
+give the API container the Docker socket or broad host privileges as a
+workaround. The devcontainer explicitly selects the test-container backend.
+
+Client configuration emails include a `.conf` file and a PNG QR code with the
+same configuration. Both contain private keys: use a trusted mail transport,
+verify the recipient, and store or delete both attachments securely.
 
 ## Authentication
 

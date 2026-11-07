@@ -1,7 +1,7 @@
 """add column for users
 
 Revision ID: 3f0e93b9529d
-Revises: 1d2e644c8fd2
+Revises: 2048c5511df9
 Create Date: 2026-11-07 00:01:04.086497
 
 """
@@ -13,7 +13,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = '3f0e93b9529d'
-down_revision: Union[str, Sequence[str], None] = '1d2e644c8fd2'
+down_revision: Union[str, Sequence[str], None] = '2048c5511df9'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

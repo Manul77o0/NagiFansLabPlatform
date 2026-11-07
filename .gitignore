@@ -225,3 +225,19 @@ __marimo__/
 *.sqlite3
 *.db-shm
 *.db-wal
+
+# Local WireGuard test configs contain private keys.
+.devcontainer/wireguard-test/data/*
+!.devcontainer/wireguard-test/data/.gitkeep
+!.devcontainer/wireguard-test/data/requests/
+!.devcontainer/wireguard-test/data/status/
+!.devcontainer/wireguard-test/data/client-status/
+!.devcontainer/wireguard-test/data/clients/
+.devcontainer/wireguard-test/data/requests/*
+!.devcontainer/wireguard-test/data/requests/.gitkeep
+.devcontainer/wireguard-test/data/status/*
+!.devcontainer/wireguard-test/data/status/.gitkeep
+.devcontainer/wireguard-test/data/client-status/*
+!.devcontainer/wireguard-test/data/client-status/.gitkeep
+.devcontainer/wireguard-test/data/clients/*
+!.devcontainer/wireguard-test/data/clients/.gitkeep

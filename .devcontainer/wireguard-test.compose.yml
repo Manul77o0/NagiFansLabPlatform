@@ -1,0 +1,35 @@
+services:
+  wireguard-test-server:
+    build:
+      context: ./wireguard-test
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    ports:
+      - "51820:51820/udp"
+    environment:
+      WG_QUICK_USERSPACE_IMPLEMENTATION: wireguard-go
+    sysctls:
+      net.ipv4.conf.all.src_valid_mark: "1"
+    volumes:
+      - ./wireguard-test/data/requests:/run/wireguard-test/requests
+      - ./wireguard-test/data/status:/run/wireguard-test/status
+    restart: unless-stopped
+
+  wireguard-test-client:
+    build:
+      context: ./wireguard-test
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    entrypoint: ["python3", "/usr/local/bin/client-agent.py"]
+    environment:
+      WG_QUICK_USERSPACE_IMPLEMENTATION: wireguard-go
+    depends_on:
+      - wireguard-test-server
+    volumes:
+      - ./wireguard-test/data/clients:/run/wireguard-client:ro
+      - ./wireguard-test/data/client-status:/run/wireguard-client-status
+    restart: unless-stopped

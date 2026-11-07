@@ -1,6 +1,6 @@
 import datetime
 
-from sqlalchemy import Column, DateTime, Integer, String
+from sqlalchemy import Column, DateTime, Integer, String, Text
 
 from .database import Base
 
@@ -19,4 +19,14 @@ class SystemUser(Base):
     email = Column(String, index=False, unique=True)
     password = Column(String, index=False)
     disabled = Column(Integer, index=False, default=0)
+    updated_at = Column(DateTime, index=False, default=get_jst_now, onupdate=get_jst_now)
+
+class WireGuard(Base):
+    
+    __tablename__ = "wireguard"
+
+    id = Column(Integer, primary_key=True, index=True)
+    type = Column(String, index=False)
+    name = Column(String, index=False)
+    value = Column(Text, index=False)
     updated_at = Column(DateTime, index=False, default=get_jst_now, onupdate=get_jst_now)

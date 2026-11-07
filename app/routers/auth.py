@@ -1,4 +1,5 @@
 import os
+import secrets
 from datetime import datetime, timedelta
 from typing import Annotated
 
@@ -6,7 +7,7 @@ import jwt
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from fastapi.security import OAuth2PasswordRequestForm
 from loguru import logger
-from sqlalchemy import func, insert, select, update
+from sqlalchemy import exists, func, insert, literal, select, update
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.common.auth_func import (
@@ -31,6 +32,7 @@ from app.common.const import (
 from app.common.email import send_email
 from app.common.schema import (
     BrowserLogin,
+    InitialAdminRequest,
     ResetPasswordRequest,
     Result,
     Token,
@@ -43,6 +45,57 @@ from app.database import AsyncSession, get_db
 from app.models import SystemUser
 
 app = APIRouter()
+
+
+@app.post("/setup/initial-admin", include_in_schema=False)
+async def setup_initial_admin(
+    request: InitialAdminRequest,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> Result:
+    token = os.environ.get("INITIAL_SETUP_TOKEN", "")
+    if len(token) < 32 or not DOMAIN:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Initial setup is not configured",
+        )
+    if not secrets.compare_digest(
+        token.encode("utf-8"), request.setup_token.encode("utf-8")
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Invalid setup token",
+        )
+
+    password_hash = get_password_hash(request.password)
+    statement = (
+        insert(SystemUser)
+        .from_select(
+            ["name", "email", "password", "level", "disabled"],
+            select(
+                literal(request.username),
+                literal(f"{request.username}@{DOMAIN}"),
+                literal(password_hash),
+                literal(3),
+                literal(0),
+            ).where(~exists(select(SystemUser.id))),
+        )
+        .returning(SystemUser.id)
+    )
+    try:
+        result = await db.execute(statement)
+        user_id = result.scalar_one_or_none()
+        if user_id is None:
+            await db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Initial setup is already complete",
+            )
+        await db.commit()
+    except SQLAlchemyError:
+        await db.rollback()
+        logger.exception("Failed to create initial administrator")
+        raise
+    return Result(result="success")
 
 
 @app.post("/token")
@@ -114,7 +167,7 @@ async def read_users_me(
 @app.get("/users/me/tools/")
 async def read_usable_tools(
     current_user: Annotated[User, Depends(get_current_active_user)],
-):
+) -> Tools:
     tools_list = [{"WireGuardTools": "/wg_tools"}]
     if current_user.level >= 3:
         tools_list.append({"UserManageTools": "/admin/users"})
@@ -281,7 +334,7 @@ async def reset_pw_user(
 
 @app.post("/reset", include_in_schema=False)
 async def reset_password(request: ResetPasswordRequest,
-    db: Annotated[AsyncSession, Depends(get_db)]):
+    db: Annotated[AsyncSession, Depends(get_db)]) -> Result:
     try:
         payload = jwt.decode(request.token, SECRET_KEY, algorithms=[ALGORITHM])
 
@@ -322,7 +375,7 @@ async def reset_password(request: ResetPasswordRequest,
         raise
     add_user = result.scalar_one_or_none()
     if add_user:
-        return 
+        return Result(result="success") 
     else:
         logger.warning(f"Old UPDT Timestamp -> {datetime.fromtimestamp(payload.get("upd"))}")
         raise HTTPException(

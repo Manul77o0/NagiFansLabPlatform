@@ -3,6 +3,7 @@ import HomeView from '../views/HomeView.vue'
 import ResetPasswordView from '../views/ResetPasswordView.vue'
 import AdminUsersView from '../views/AdminUsersView.vue'
 import ItemsView from '../views/ItemsView.vue'
+import InitialSetupView from '../views/InitialSetupView.vue'
 import { api } from '../components/api'
 
 const routes = [
@@ -12,6 +13,11 @@ const routes = [
     component: HomeView
   },
   {
+    path: '/setup',
+    name: 'InitialSetup',
+    component: InitialSetupView
+  },
+  {
     path: '/reset',
     name: 'ResetPassword',
     component: ResetPasswordView
@@ -19,6 +25,18 @@ const routes = [
   {
     path: '/wg_tools',
     name: 'WireguardTools',
+    component: ItemsView,
+    meta: { requiresUser: true }
+  },
+  {
+    path: '/wg_tools/server_settings',
+    name: 'WireguardServerSettings',
+    component: ItemsView,
+    meta: { requiresUser: true }
+  },
+  {
+    path: '/wg_tools/global_settings',
+    name: 'WireguardGlobalSettings',
     component: ItemsView,
     meta: { requiresUser: true }
   },
