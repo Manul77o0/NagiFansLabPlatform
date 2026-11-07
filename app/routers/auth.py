@@ -8,8 +8,8 @@ from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jwt.exceptions import InvalidTokenError
 from loguru import logger
 from pwdlib import PasswordHash
-from pydantic import BaseModel
-from sqlalchemy import insert, select, update
+from pydantic import BaseModel, Field
+from sqlalchemy import func, insert, select, update
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.common.email import send_email
@@ -57,6 +57,9 @@ class UserInDB(User):
 class UpdateUserRequest(BaseModel):
     displayName: str
     
+class UpdateUserLevelRequest(BaseModel):
+    level: int = Field(strict=True, ge=1, le=3)
+
 class ResetPasswordRequest(BaseModel):
     token: str
     new_password: str
@@ -456,6 +459,57 @@ async def update_user(
             disabled=bool(add_user.disabled),
             level=add_user.level,
         )
+
+@app.post("/admin/user/{user_id}/level")
+async def update_user_level(
+    user_id: int,
+    request: UpdateUserLevelRequest,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db: Annotated[AsyncSession, Depends(get_db)]
+) -> User:
+    if current_user.level < 3:
+        raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Not Enough Role",
+                )
+    user = await get_user_uid(db, user_id)
+    if user is None or user_id == current_user.id:
+        raise HTTPException(status_code=400, detail="Invalid uid")
+
+    if user.level == 3 and request.level < 3 and not user.disabled:
+        result = await db.execute(
+            select(func.count()).select_from(SystemUser).where(
+                SystemUser.level == 3,
+                SystemUser.disabled == 0,
+            )
+        )
+        if result.scalar_one() <= 1:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="At least one active administrator must remain",
+            )
+
+    try:
+        result = await db.execute(
+            update(SystemUser)
+            .where(SystemUser.id == user_id)
+            .values(level=request.level)
+            .returning(SystemUser)
+        )
+        await db.commit()
+    except SQLAlchemyError as e:
+        logger.warning(f"Update Users Table Error -> {e}")
+        await db.rollback()
+        raise
+
+    updated_user = result.scalar_one()
+    return User(
+        id=updated_user.id,
+        displayname=updated_user.name,
+        email=updated_user.email,
+        disabled=bool(updated_user.disabled),
+        level=updated_user.level,
+    )
 
 @app.post("/admin/user/{user_id}/reset")
 async def reset_pw_user(

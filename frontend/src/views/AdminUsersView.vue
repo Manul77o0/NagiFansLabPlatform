@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { api } from '../components/api'
 import CustomPromptModal from './CustomPromptModal.vue'
+import UserRoleModal from './UserRoleModal.vue'
 
 const router = useRouter()
 
@@ -21,6 +22,8 @@ const registerusername = ref('')
 const registerpassword = ref('')
 const isModalOpen = ref(false)
 const selectedUserId = ref(null)
+const isRoleModalOpen = ref(false)
+const selectedRoleUser = ref(null)
 
 const filteredUsers = computed(() => {
   const query = searchQuery.value.trim().toLocaleLowerCase()
@@ -37,6 +40,12 @@ const activeUserCount = computed(() => items.value.filter((item) => !item.disabl
 const disabledUserCount = computed(() => items.value.length - activeUserCount.value)
 const userInitial = computed(() => user.value?.displayname?.trim()?.slice(0, 1) || 'A')
 
+const roleName = (level) => ({
+  1: '読み取りユーザー',
+  2: '書き込みユーザー',
+  3: '管理ユーザー',
+}[level] || '未設定')
+
 const setCommandMessage = (message, isError = false) => {
   cmdisplayMsg.value = message
   isCommandError.value = isError
@@ -47,9 +56,21 @@ const openEditModal = (id) => {
   isModalOpen.value = true
 }
 
+const openRoleModal = (itemUser) => {
+  selectedRoleUser.value = itemUser
+  isRoleModalOpen.value = true
+}
+
 const handleSuccess = async () => {
   setCommandMessage('表示名を変更しました')
   await loadItems()
+}
+
+const handleRoleSuccess = (updatedUser) => {
+  const itemUser = items.value.find((item) => item.id === updatedUser.id)
+  if (itemUser) itemUser.level = updatedUser.level
+  setCommandMessage(`${updatedUser.displayname}さんの権限を「${roleName(updatedUser.level)}」に変更しました`)
+  isRoleModalOpen.value = false
 }
 
 const loadCurrentUser = async () => {
@@ -274,15 +295,16 @@ onMounted(async () => {
                   <tr>
                     <th scope="col">ユーザー</th>
                     <th scope="col">ステータス</th>
+                    <th scope="col">権限</th>
                     <th scope="col">操作</th>
                   </tr>
                 </thead>
                 <tbody>
                   <tr v-if="isLoading">
-                    <td class="table-message" colspan="3">ユーザー情報を読み込んでいます…</td>
+                    <td class="table-message" colspan="4">ユーザー情報を読み込んでいます…</td>
                   </tr>
                   <tr v-else-if="filteredUsers.length === 0">
-                    <td class="table-message" colspan="3">
+                    <td class="table-message" colspan="4">
                       {{ searchQuery ? '検索条件に一致するユーザーはいません。' : 'ユーザーはまだ登録されていません。' }}
                     </td>
                   </tr>
@@ -303,15 +325,30 @@ onMounted(async () => {
                       </span>
                     </td>
                     <td>
+                      <span class="role-badge" :class="`role-level-${item_user.level}`">
+                        {{ roleName(item_user.level) }}
+                      </span>
+                    </td>
+                    <td>
                       <div class="row-actions">
                         <button
                           class="action-button"
                           type="button"
-                          title="表示名を変更"
+                          title="表示名を編集"
                           :aria-label="`${item_user.displayname}の表示名を変更`"
                           @click="openEditModal(item_user.id)"
                         >
-                          編集
+                          表示名編集
+                        </button>
+                        <button
+                          class="action-button"
+                          type="button"
+                          :title="item_user.id === user?.id ? '自分自身の権限は変更できません' : '権限を変更'"
+                          :aria-label="`${item_user.displayname}の権限を変更`"
+                          :disabled="item_user.id === user?.id"
+                          @click="openRoleModal(item_user)"
+                        >
+                          権限変更
                         </button>
                         <button
                           class="action-button"
@@ -334,6 +371,8 @@ onMounted(async () => {
                           v-else
                           class="action-button action-disable"
                           type="button"
+                          :title="item_user.id === user?.id ? '自分自身は無効化できません' : 'ユーザーを無効化'"
+                          :disabled="item_user.id === user?.id"
                           @click="updateUserStatus(item_user.id, false)"
                         >
                           無効化
@@ -409,6 +448,12 @@ onMounted(async () => {
         :user-id="selectedUserId"
         @close="isModalOpen = false"
         @success="handleSuccess"
+      />
+      <UserRoleModal
+        v-if="isRoleModalOpen && selectedRoleUser"
+        :user="selectedRoleUser"
+        @close="isRoleModalOpen = false"
+        @success="handleRoleSuccess"
       />
     </main>
   </div>
@@ -905,6 +950,30 @@ onMounted(async () => {
   background: #c8a86d;
 }
 
+.role-badge {
+  display: inline-flex;
+  padding: 5px 8px;
+  border-radius: 20px;
+  font-size: 10px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.role-level-1 {
+  color: #64798d;
+  background: #eff3f6;
+}
+
+.role-level-2 {
+  color: #3977a5;
+  background: #edf5fb;
+}
+
+.role-level-3 {
+  color: #7d68a5;
+  background: #f3effa;
+}
+
 .row-actions {
   display: flex;
   justify-content: flex-end;
@@ -928,6 +997,11 @@ onMounted(async () => {
   border-color: #dce8f2;
   color: #286da9;
   background: #f3f8fc;
+}
+
+.action-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .action-button.action-disable:hover {
