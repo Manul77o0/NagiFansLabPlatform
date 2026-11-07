@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import HomeView from '../views/HomeView.vue'
+import ResetPasswordView from '../views/ResetPasswordView.vue'
 import AdminUsersView from '../views/AdminUsersView.vue'
 import ItemsView from '../views/ItemsView.vue'
 import { api } from '../components/api'
@@ -11,8 +12,13 @@ const routes = [
     component: HomeView
   },
   {
-    path: '/items',
-    name: 'Items',
+    path: '/reset',
+    name: 'ResetPassword',
+    component: ResetPasswordView
+  },
+  {
+    path: '/wg_tools',
+    name: 'WireguardTools',
     component: ItemsView,
     meta: { requiresUser: true }
   },

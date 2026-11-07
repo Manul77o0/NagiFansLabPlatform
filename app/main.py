@@ -25,6 +25,7 @@ app.add_middleware(
 )
 
 # エンドポイント追加したらここに記載
-from app.routers import auth
+from app.routers import auth, wgtools
 
 app.include_router(auth.app)
+app.include_router(wgtools.app)

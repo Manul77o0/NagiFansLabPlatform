@@ -2,6 +2,7 @@
 import { ref, onMounted } from 'vue'
 import { api } from '../components/api'
 import { useRoute, useRouter } from 'vue-router'
+import CustomPromptModal from './CustomPromptModal.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -15,6 +16,18 @@ const cmdisplayMsg = ref('')
 const formdisplayMsg = ref('')
 const registerusername = ref('')
 const registerpassword = ref('')
+
+const isModalOpen = ref(false)
+const selectedUserId = ref(null)
+
+const openEditModal = (id) => {
+  selectedUserId.value = id
+  isModalOpen.value = true
+}
+const handleSuccess = async (responseData) => {
+    cmdisplayMsg.value = '表示名変更しました'
+    await loadItems()
+}
 
 const loadCurrentUser = async () => {
   try {
@@ -61,6 +74,7 @@ const handleRegister = async () => {
     })
     registerusername.value = ''
     registerpassword.value = ''
+    cmdisplayMsg.value = '登録しました'
     await loadItems()
 
   } catch (error) {
@@ -76,6 +90,7 @@ const handleRegister = async () => {
 const enableUser = async (userId) => {
   try {
     await api.post(`/api/admin/user/${userId}/enable`, {})
+    cmdisplayMsg.value = '有効化を実施しました'
     await loadItems()
 
   } catch (error) {
@@ -92,6 +107,7 @@ const enableUser = async (userId) => {
 const disableUser = async (userId) => {
   try {
     await api.post(`/api/admin/user/${userId}/disable`, {})
+    cmdisplayMsg.value = '無効化を実施しました'
     await loadItems()
 
   } catch (error) {
@@ -106,7 +122,20 @@ const disableUser = async (userId) => {
 }
 
 const resetPassword = async (userId) => {
-  alert(`TLD.....${userId}`)
+  try {
+    await api.post(`/api/admin/user/${userId}/reset`, {})
+    cmdisplayMsg.value = '該当のメールアドレスに初期化メールを送信しました'
+    await loadItems()
+
+  } catch (error) {
+    if (error.response?.status === 400) {
+      cmdisplayMsg.value = '不正なユーザIDです'
+    } else if (error.response?.status === 401) {
+      cmdisplayMsg.value = 'ページを再読み込みしてください'
+    } else {
+      cmdisplayMsg.value = '通信エラーが発生しました、再度お試しください'
+    }
+  }
 }
 
 const handleLogout = async () => {
@@ -153,9 +182,15 @@ onMounted(async () => {
         <h2>ユーザ一覧</h2>
         <ul>
           <li v-for="item_user in items" :key="item_user.id">
-            {{ item_user.displayname }} ({{ item_user.email }}) (<a href="#" @click.prevent="resetPassword(item_user.id)">表示名変更</a> | <a href="#" @click.prevent="resetPassword(item_user.id)">パスワード初期化</a> | <a href="#" @click.prevent="disableUser(item_user.id)" v-if="!item_user.disabled">無効化</a><a href="#" @click.prevent="enableUser(item_user.id)" v-if="item_user.disabled">有効化</a>)
+            {{ item_user.displayname }} ({{ item_user.email }}) (<a href="#" @click.prevent="openEditModal(item_user.id)">表示名変更</a> | <a href="#" @click.prevent="resetPassword(item_user.id)">パスワード初期化</a> | <a href="#" @click.prevent="disableUser(item_user.id)" v-if="!item_user.disabled">無効化</a><a href="#" @click.prevent="enableUser(item_user.id)" v-if="item_user.disabled">有効化</a>)
           </li>
         </ul>
+<CustomPromptModal
+      v-if="isModalOpen"
+      :user-id="selectedUserId"
+      @close="isModalOpen = false"
+      @success="handleSuccess"
+    />
         <h2>ユーザ追加</h2>
         <form @submit.prevent="handleRegister">
         <p role="status" aria-live="polite" v-if="formdisplayMsg">{{ formdisplayMsg }}</p>

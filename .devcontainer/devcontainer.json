@@ -1,6 +1,8 @@
 {
   "name": "Python (uv)",
-  "image": "ghcr.io/astral-sh/uv:debian",
+  "dockerComposeFile": "docker-compose.yml",
+  "service": "app",
+  "workspaceFolder": "/workspace",
   "features": {
     "ghcr.io/devcontainers/features/common-utils:2": {},
     "ghcr.io/devcontainers/features/node:1": {
@@ -34,7 +36,7 @@
     "UV_LINK_MODE": "copy"
   },
   "onCreateCommand": "sudo chown -R vscode:vscode /home/vscode/.cache/uv .venv",
-  "postCreateCommand": "git config --global gpg.format ssh && git config --global user.signingkey /home/vscode/.ssh/id_ed25519_gitsign.pub && git config --global commit.gpgsign true && cd frontend && npm install && sudo apt-get update && sudo apt-get install -y sqlite3",
+  "postCreateCommand": "git config --global gpg.format ssh && git config --global user.signingkey /home/vscode/.ssh/id_ed25519_gitsign.pub && git config --global commit.gpgsign true",
     "customizations": {
     "vscode": {
       "extensions": [

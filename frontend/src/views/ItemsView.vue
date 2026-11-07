@@ -6,6 +6,7 @@ import { useRoute, useRouter } from 'vue-router'
 const route = useRoute()
 const router = useRouter()
 
+const cmdisplayMsg = ref('')
 const isLoggedIn = ref(false)
 const isUserAdmin = ref(false)
 const user = ref(null)
@@ -39,7 +40,7 @@ const loadCurrentUser = async () => {
 
 const loadItems = async () => {
   try {
-    const response = await api.get('/api/users/me/items')
+    const response = await api.get('/api/wg_tools')
     items.value = response.data
   } catch (error) {
     cmdisplayMsg.value = '通信エラーが発生しました、再度お試しください'
@@ -71,6 +72,7 @@ onMounted(async () => {
     <h1>NagiFans Lab</h1>
     <p>NagiFans Lab へようこそ</p>
 
+    <p role="status" aria-live="polite" v-if="cmdisplayMsg">{{ cmdisplayMsg }}</p>
     <section v-if="!isLoggedIn">
       <p>ゲスト さん</p>
       <p><a href="/?redirect=/admin/users&requiredlogin=true">ログインが必要です</a></p>
@@ -81,12 +83,7 @@ onMounted(async () => {
       <button type="button" @click="handleLogout">ログアウト</button>
 
       <div id="admin_contents" v-if="isLoggedIn">
-        <h2>アイテム一覧</h2>
-        <ul>
-          <li v-for="item in items" :key="item.item_id">
-            {{ item.item_id }} (owner: {{ item.owner }})
-          </li>
-        </ul>
+        TLD..... {{ items }}
       </div>
     </section>
 

@@ -12,6 +12,7 @@ from pydantic import BaseModel
 from sqlalchemy import insert, select, update
 from sqlalchemy.exc import SQLAlchemyError
 
+from app.common.email import send_email
 from app.database import AsyncSession, get_db
 from app.models import SystemUser
 
@@ -51,9 +52,15 @@ class User(BaseModel):
 
 
 class UserInDB(User):
-    hashed_password: str
+    hashed_password: str | None = None
 
-
+class UpdateUserRequest(BaseModel):
+    displayName: str
+    
+class ResetPasswordRequest(BaseModel):
+    token: str
+    new_password: str
+    
 def verify_password(plain_password, hashed_password):
     return password_hash.verify(plain_password, hashed_password)
 
@@ -61,6 +68,15 @@ def verify_password(plain_password, hashed_password):
 def get_password_hash(password):
     return password_hash.hash(password)
 
+def get_resettoken(email: str, last_updated_at: datetime) -> str:
+    payload = {
+        "sub": email,
+        "exp": datetime.now(UTC) + timedelta(minutes=30),
+        "type": "password_reset",
+        "upd": last_updated_at.timestamp()
+    }
+    encoded_jwt = jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
+    return encoded_jwt
 
 async def get_user(db: AsyncSession, username: str) -> UserInDB | None:
     result = await db.execute(
@@ -289,7 +305,11 @@ async def read_own_items(
 async def read_usable_tools(
     current_user: Annotated[User, Depends(get_current_active_user)],
 ):
-    return {"tools": [{"items": "/items"}, {"users": "/admin/users"}], "owner": current_user.email}
+    if current_user.level < 3:
+        return {"tools": [{"WireGuardTools": "/wg_tools"}], "owner": current_user.email}
+    elif current_user.level == 3:
+        return {"tools": [{"WireGuardTools": "/wg_tools"}, {"users": "/admin/users"}], "owner": current_user.email}
+    return {"tools": [],  "owner": current_user.email}
 
 
 @app.get("/admin/users")
@@ -323,7 +343,7 @@ async def register_user(
                 )
             await db.commit()
         except SQLAlchemyError as e:
-            logger.warn(f"Insert Users Table Error -> {e}")
+            logger.warning(f"Insert Users Table Error -> {e}")
             await db.rollback()
             raise HTTPException(status_code=400, detail="Invalid username or password") from e
     else:
@@ -349,14 +369,14 @@ async def enable_user(
                     detail="Not Enough Role",
                 )
     user = await get_user_uid(db, user_id)
-    if user is not None:
+    if user is not None and user_id != current_user.id:
         try:
             result = await db.execute(
                     update(SystemUser).where(SystemUser.id==user_id).values(disabled=0).returning(SystemUser)
                 )
             await db.commit()
         except SQLAlchemyError as e:
-            logger.warn(f"Update Users Table Error -> {e}")
+            logger.warning(f"Update Users Table Error -> {e}")
             await db.rollback()
             raise
     else:
@@ -382,14 +402,14 @@ async def disble_user(
                     detail="Not Enough Role",
                 )
     user = await get_user_uid(db, user_id)
-    if user is not None:
+    if user is not None and user_id != current_user.id:
         try:
             result = await db.execute(
                     update(SystemUser).where(SystemUser.id==user_id).values(disabled=1).returning(SystemUser)
                 )
             await db.commit()
         except SQLAlchemyError as e:
-            logger.warn(f"Update Users Table Error -> {e}")
+            logger.warning(f"Update Users Table Error -> {e}")
             await db.rollback()
             raise
     else:
@@ -402,3 +422,122 @@ async def disble_user(
             disabled=bool(add_user.disabled),
             level=add_user.level,
         )
+
+@app.post("/admin/user/{user_id}/update")
+async def update_user(
+    user_id: int,
+    request: UpdateUserRequest,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db: Annotated[AsyncSession, Depends(get_db)]
+) -> User:
+    if current_user.level < 3:
+        raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Not Enough Role",
+                )
+    user = await get_user_uid(db, user_id)
+    if user is not None and user_id != current_user.id:
+        try:
+            result = await db.execute(
+                    update(SystemUser).where(SystemUser.id==user_id).values(name=request.displayName).returning(SystemUser)
+                )
+            await db.commit()
+        except SQLAlchemyError as e:
+            logger.warning(f"Update Users Table Error -> {e}")
+            await db.rollback()
+            raise
+    else:
+        raise HTTPException(status_code=400, detail="Invalid uid")
+    add_user = result.scalar_one()
+    return User(
+            id=add_user.id,
+            displayname=add_user.name,
+            email=add_user.email,
+            disabled=bool(add_user.disabled),
+            level=add_user.level,
+        )
+
+@app.post("/admin/user/{user_id}/reset")
+async def reset_pw_user(
+    user_id: int,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db: Annotated[AsyncSession, Depends(get_db)]
+) -> User:
+    if current_user.level < 3:
+        raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Not Enough Role",
+                )
+    user = await get_user_uid(db, user_id)
+    if user is not None:
+        try:
+            result = await db.execute(
+                    update(SystemUser).where(SystemUser.id==user_id).values(password=None).returning(SystemUser)
+                )
+            await db.commit()
+        except SQLAlchemyError as e:
+            logger.warning(f"Update Users Table Error -> {e}")
+            await db.rollback()
+            raise
+    else:
+        raise HTTPException(status_code=400, detail="Invalid uid")
+    add_user = result.scalar_one()
+    token = get_resettoken(add_user.email, add_user.updated_at)
+    await send_email([add_user.email], "パスワードリセット", f"下記URLからパスワードリセットを行ってください。(発行から30分間有効です)\n{ os.environ.get('EXTERNAL_URL')}/reset?token={token}")
+    return User(
+            id=add_user.id,
+            displayname=add_user.name,
+            email=add_user.email,
+            disabled=bool(add_user.disabled),
+            level=add_user.level,
+        )
+
+@app.post("/reset", include_in_schema=False)
+async def reset_password(request: ResetPasswordRequest,
+    db: Annotated[AsyncSession, Depends(get_db)]):
+    try:
+        payload = jwt.decode(request.token, SECRET_KEY, algorithms=[ALGORITHM])
+
+        if payload.get("type") != "password_reset":
+            logger.warning("Invalid token type")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail="無効なトークンです"
+            )
+
+        email = payload.get("sub")
+        if email is None:
+            logger.warning("Invalid token")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail="無効なトークンです"
+            )
+
+    except jwt.ExpiredSignatureError as e:
+        logger.warning("Expired token")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="無効なトークンです",
+        ) from e
+    except jwt.PyJWTError as e:
+        logger.warning("Not Validate token")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="無効なトークンです"
+        ) from e
+
+    try:
+        new_password_hash = get_password_hash(request.new_password)
+        result = await db.execute(
+                update(SystemUser).where(SystemUser.email == email, SystemUser.updated_at == datetime.fromtimestamp(payload.get("upd"))).values(password=new_password_hash).returning(SystemUser)
+            )
+        await db.commit()
+    except SQLAlchemyError as e:
+        logger.warning(f"Update Users Table Error -> {e}")
+        await db.rollback()
+        raise
+    add_user = result.scalar_one_or_none()
+    if add_user:
+        return 
+    else:
+        logger.warning(f"Old UPDT Timestamp -> {datetime.fromtimestamp(payload.get("upd"))}")
+        raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST, detail="このトークンはすでに使用されています"
+                )

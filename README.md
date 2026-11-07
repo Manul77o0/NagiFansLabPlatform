@@ -12,6 +12,12 @@ This project will serve multiple functions:
 uv run fastapi dev
 ```
 
+## MailCatcher
+
+The Dev Container starts MailCatcher with Docker Compose. Open
+<http://localhost:1080> to view captured email. Configure applications running
+inside the Compose network to use `mail:1025` as their SMTP server.
+
 ## Authentication
 
 `POST /token` returns a Bearer access token for API clients. The browser UI is served as a static page and calls APIs directly: it signs in with `POST /session/login` using JSON credentials, which sets an `HttpOnly`, `SameSite=Lax` cookie, then loads `/users/me/` and `/users/me/items/`. `POST /session/logout` clears the cookie. The browser never reads or stores the token in JavaScript. Bearer tokens take precedence when both credentials are present.

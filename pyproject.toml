@@ -7,6 +7,7 @@ requires-python = ">=3.12"
 dependencies = [
     "aiosqlite>=0.22.1",
     "alembic>=1.20.1",
+    "fastapi-mail>=1.6.8",
     "fastapi[standard]>=0.162.0",
     "itsdangerous>=2.2.0",
     "loguru>=0.7.3",
@@ -31,6 +32,7 @@ package = false
 [dependency-groups]
 dev = [
     "ruff>=0.17.3",
+    "sqlite-web>=0.8.2",
 ]
 
 [tool.ruff]
