@@ -3,6 +3,7 @@ import HomeView from '../views/HomeView.vue'
 import ResetPasswordView from '../views/ResetPasswordView.vue'
 import AdminUsersView from '../views/AdminUsersView.vue'
 import ItemsView from '../views/ItemsView.vue'
+import ConnectedPeersView from '../views/ConnectedPeersView.vue'
 import InitialSetupView from '../views/InitialSetupView.vue'
 import { getCurrentUser } from '../components/api'
 
@@ -27,6 +28,12 @@ const routes = [
     name: 'WireguardTools',
     component: ItemsView,
     meta: { requiresUser: true }
+  },
+  {
+    path: '/wg_tools/connected_peers',
+    name: 'WireguardConnectedPeers',
+    component: ConnectedPeersView,
+    meta: { requiresAdmin: true }
   },
   {
     path: '/wg_tools/server_settings',

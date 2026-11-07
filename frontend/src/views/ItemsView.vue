@@ -530,6 +530,7 @@ watch(() => route.path, () => {
 
       <nav class="wg-section-nav" aria-label="WireGuard設定">
         <RouterLink to="/wg_tools" :class="{ 'wg-section-active': section === 'clients' }">クライアント設定</RouterLink>
+        <RouterLink v-if="canAdmin" to="/wg_tools/connected_peers">接続状態</RouterLink>
         <RouterLink to="/wg_tools/server_settings" :class="{ 'wg-section-active': section === 'server' }">サーバー設定</RouterLink>
         <RouterLink to="/wg_tools/global_settings" :class="{ 'wg-section-active': section === 'global' }">グローバル設定</RouterLink>
       </nav>

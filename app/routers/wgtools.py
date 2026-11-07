@@ -18,6 +18,7 @@ from app.common.schema import (
     WGClientCreated,
     WGClientKeys,
     WGGlobal,
+    WGPeerStatus,
     WGServer,
     WGServerApplyResult,
     WGServerKeys,
@@ -48,6 +49,7 @@ from app.common.wg_func import (
 from app.common.wg_func import (
     update_client as save_client_update,
 )
+from app.common.wg_status import is_recent_handshake, read_wireguard_status
 from app.database import AsyncSession, get_db
 
 app = APIRouter(prefix="/wg_tools", tags=["WireGuardTools"])
@@ -156,6 +158,48 @@ async def get_all_clients(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> list[WGClient]:
     return await load_all_clients(db)
+
+
+@app.get("/connected_peers", dependencies=[Depends(check_admin)])
+async def get_connected_peers(
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> list[WGPeerStatus]:
+    server = await get_wireguard_data(db, "config", "server")
+    interface = server.get("ServerInterface") if server is not None else None
+    if not isinstance(interface, str) or not interface:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="WireGuard server interface is not configured",
+        )
+
+    try:
+        live_peers = await read_wireguard_status(interface)
+    except (OSError, RuntimeError, TimeoutError, UnicodeError, ValueError) as exc:
+        logger.exception("Could not retrieve connected WireGuard peers")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Could not retrieve WireGuard status; check the interface and server permissions",
+        ) from exc
+
+    peers = []
+    for client in await get_all_client_data(db):
+        status_data = live_peers.get(client.get("PublicKey"), {})
+        handshake = status_data.get("LastHandshake")
+        peers.append(
+            WGPeerStatus(
+                ID=client["ID"],
+                Name=client["Name"],
+                Email=client["Email"],
+                IPAllocation=client.get("IPAllocation"),
+                PublicKey=client.get("PublicKey"),
+                Endpoint=status_data.get("Endpoint"),
+                ReceivedBytes=status_data.get("ReceivedBytes") or 0,
+                TransmittedBytes=status_data.get("TransmittedBytes") or 0,
+                LastHandshake=handshake,
+                Connected=is_recent_handshake(handshake),
+            )
+        )
+    return sorted(peers, key=lambda peer: (peer.Name.casefold(), peer.ID))
 
 
 @app.post("/client/register", dependencies=[Depends(check_write)])

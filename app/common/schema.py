@@ -86,6 +86,19 @@ class WGClient(BaseModel):
     disabled: bool | None = None
 
 
+class WGPeerStatus(BaseModel):
+    ID: str
+    Name: str
+    Email: str
+    IPAllocation: str | None = None
+    PublicKey: str | None = None
+    Endpoint: str | None = None
+    ReceivedBytes: int = 0
+    TransmittedBytes: int = 0
+    LastHandshake: int | None = None
+    Connected: bool = False
+
+
 class WGClientCreate(BaseModel):
     Name: str
     Email: str

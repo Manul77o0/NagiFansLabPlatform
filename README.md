@@ -39,6 +39,11 @@ only to trusted users; protect the API and config directory accordingly.
 give the API container the Docker socket or broad host privileges as a
 workaround. The devcontainer explicitly selects the test-container backend.
 
+The administrator-only `/wg_tools/connected_peers` view reads runtime details
+with `wg show <interface> dump` on the API host. The API process must be able to
+query the configured WireGuard interface; the view lists registered clients
+and estimates connectivity from a handshake within the last three minutes.
+
 Client configuration emails include a `.conf` file and a PNG QR code with the
 same configuration. Both contain private keys: use a trusted mail transport,
 verify the recipient, and store or delete both attachments securely.
