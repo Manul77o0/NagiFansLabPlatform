@@ -1,234 +1,48 @@
 import os
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from typing import Annotated
 
 import jwt
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
-from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
-from jwt.exceptions import InvalidTokenError
+from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi.security import OAuth2PasswordRequestForm
 from loguru import logger
-from pwdlib import PasswordHash
-from pydantic import BaseModel, Field
 from sqlalchemy import func, insert, select, update
 from sqlalchemy.exc import SQLAlchemyError
 
+from app.common.auth_func import (
+    authenticate_user,
+    check_admin,
+    create_access_token,
+    get_all_user,
+    get_current_active_user,
+    get_password_hash,
+    get_resettoken,
+    get_user,
+    get_user_uid,
+)
+from app.common.const import (
+    ACCESS_TOKEN_COOKIE,
+    ACCESS_TOKEN_EXPIRE_MINUTES,
+    ALGORITHM,
+    COOKIE_SECURE,
+    DOMAIN,
+    SECRET_KEY,
+)
 from app.common.email import send_email
+from app.common.schema import (
+    BrowserLogin,
+    ResetPasswordRequest,
+    Result,
+    Token,
+    Tools,
+    UpdateUserLevelRequest,
+    UpdateUserRequest,
+    User,
+)
 from app.database import AsyncSession, get_db
 from app.models import SystemUser
 
-SECRET_KEY = os.environ.get("SECRET_KEY")
-ALGORITHM = os.environ.get("ALGORITHM")
-ACCESS_TOKEN_EXPIRE_MINUTES = int(os.environ.get("ACCESS_TOKEN_EXPIRE_MINUTES", 30))
-DOMAIN = os.environ.get("DOMAIN")
-
-password_hash = PasswordHash.recommended()
-DUMMY_HASH = password_hash.hash("dummypassword")
-ACCESS_TOKEN_COOKIE = "access_token"
-COOKIE_SECURE = os.environ.get("COOKIE_SECURE", "true").lower() == "true"
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token", auto_error=False)
-
 app = APIRouter()
-
-class Token(BaseModel):
-    access_token: str
-    token_type: str
-
-
-class BrowserLogin(BaseModel):
-    username: str
-    password: str
-
-
-class TokenData(BaseModel):
-    username: str | None = None
-
-
-class User(BaseModel):
-    id: int
-    displayname: str
-    email: str | None = None
-    level: int | None = 0
-    disabled: bool | None = None
-
-
-class UserInDB(User):
-    hashed_password: str | None = None
-
-class UpdateUserRequest(BaseModel):
-    displayName: str
-    
-class UpdateUserLevelRequest(BaseModel):
-    level: int = Field(strict=True, ge=1, le=3)
-
-class ResetPasswordRequest(BaseModel):
-    token: str
-    new_password: str
-    
-def verify_password(plain_password, hashed_password):
-    return password_hash.verify(plain_password, hashed_password)
-
-
-def get_password_hash(password):
-    return password_hash.hash(password)
-
-def get_resettoken(email: str, last_updated_at: datetime) -> str:
-    payload = {
-        "sub": email,
-        "exp": datetime.now(UTC) + timedelta(minutes=30),
-        "type": "password_reset",
-        "upd": last_updated_at.timestamp()
-    }
-    encoded_jwt = jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
-    return encoded_jwt
-
-async def get_user(db: AsyncSession, username: str) -> UserInDB | None:
-    result = await db.execute(
-        select(SystemUser).where(
-            SystemUser.email == f"{username}@{DOMAIN}",
-            SystemUser.disabled == 0
-        )
-    )
-    db_user = result.scalar_one_or_none()
-    if db_user is None:
-        return None
-
-    return UserInDB(
-        id=db_user.id,
-        displayname=db_user.name,
-        email=db_user.email,
-        disabled=bool(db_user.disabled),
-        level=db_user.level,
-        hashed_password=db_user.password,
-    )
-
-async def get_user_uid(db: AsyncSession, id: int) -> UserInDB | None:
-    result = await db.execute(
-        select(SystemUser).where(
-            SystemUser.id == id
-        )
-    )
-    db_user = result.scalar_one_or_none()
-    if db_user is None:
-        return None
-
-    return UserInDB(
-        id=db_user.id,
-        displayname=db_user.name,
-        email=db_user.email,
-        disabled=bool(db_user.disabled),
-        level=db_user.level,
-        hashed_password=db_user.password,
-    )
-
-async def get_all_user(db: AsyncSession) -> list[User]:
-    result = await db.execute(
-        select(SystemUser)
-    )
-    db_users = result.scalars().all()
-    logger.debug(f"{db_users=}")
-    
-    return [
-        User(
-            id=db_user.id,
-            displayname=db_user.name,
-            email=db_user.email,
-            disabled=bool(db_user.disabled),
-            level=db_user.level,
-        )
-        for db_user in db_users
-    ]
-
-
-async def authenticate_user(
-    db: AsyncSession, username: str, password: str
-) -> UserInDB | bool:
-    user = await get_user(db, username)
-    # logger.debug(f'{get_password_hash("password")}')
-    if not user:
-        verify_password(password, DUMMY_HASH)
-        return False
-    if not verify_password(password, user.hashed_password):
-        return False
-    return user
-
-
-def create_access_token(data: dict, expires_delta: timedelta | None = None):
-    logger.info(f'User:{data["sub"]} Create Access Token.')
-    to_encode = data.copy()
-    if expires_delta:
-        expire = datetime.now(UTC) + expires_delta
-    else:
-        expire = datetime.now(UTC) + timedelta(minutes=15)
-    to_encode.update({"exp": expire})
-    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
-    return encoded_jwt
-
-
-async def get_user_from_access_token(token: str, db: AsyncSession) -> User:
-    credentials_exception = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Could not validate credentials",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
-    try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        username = payload.get("sub")
-        if username is None:
-            raise credentials_exception
-        token_data = TokenData(username=username)
-    except InvalidTokenError as e:
-        raise credentials_exception from e
-    user = await get_user(db, username=token_data.username)
-    if user is None:
-        raise credentials_exception
-    return user
-
-
-async def get_current_user(
-    request: Request,
-    token: Annotated[str | None, Depends(oauth2_scheme)],
-    db: Annotated[AsyncSession, Depends(get_db)],
-) -> User:
-    access_token = token or request.cookies.get(ACCESS_TOKEN_COOKIE)
-    if access_token is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Could not validate credentials",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    return await get_user_from_access_token(access_token, db)
-
-
-async def get_optional_cookie_user(
-    request: Request,
-    response: Response,
-    db: Annotated[AsyncSession, Depends(get_db)],
-) -> User | None:
-    token = request.cookies.get(ACCESS_TOKEN_COOKIE)
-    if token is None:
-        return None
-
-    try:
-        return await get_user_from_access_token(token, db)
-    except HTTPException as exc:
-        if exc.status_code != status.HTTP_401_UNAUTHORIZED:
-            raise
-        response.delete_cookie(
-            ACCESS_TOKEN_COOKIE,
-            path="/",
-            secure=COOKIE_SECURE,
-            httponly=True,
-            samesite="lax",
-        )
-        return None
-
-
-async def get_current_active_user(
-    current_user: Annotated[User, Depends(get_current_user)],
-):
-    if current_user.disabled:
-        raise HTTPException(status_code=400, detail="Inactive user")
-    return current_user
 
 
 @app.post("/token")
@@ -279,7 +93,7 @@ async def login_for_browser_session(
 
 
 @app.post("/session/logout", include_in_schema=False)
-async def logout_browser_session(response: Response) -> dict[str, bool]:
+async def logout_browser_session(response: Response) -> Result:
     response.delete_cookie(
         key=ACCESS_TOKEN_COOKIE,
         path="/",
@@ -287,7 +101,7 @@ async def logout_browser_session(response: Response) -> dict[str, bool]:
         httponly=True,
         samesite="lax",
     )
-    return {"ok": True}
+    return Result(result="success")
 
 
 @app.get("/users/me/")
@@ -297,51 +111,31 @@ async def read_users_me(
     return current_user
 
 
-@app.get("/users/me/items/")
-async def read_own_items(
-    current_user: Annotated[User, Depends(get_current_active_user)],
-):
-    return [{"item_id": "Foo", "owner": current_user.email}]
-
-
 @app.get("/users/me/tools/")
 async def read_usable_tools(
     current_user: Annotated[User, Depends(get_current_active_user)],
 ):
-    if current_user.level < 3:
-        return {"tools": [{"WireGuardTools": "/wg_tools"}], "owner": current_user.email}
-    elif current_user.level == 3:
-        return {"tools": [{"WireGuardTools": "/wg_tools"}, {"UserManageTools": "/admin/users"}], "owner": current_user.email}
-    return {"tools": [],  "owner": current_user.email}
+    tools_list = [{"WireGuardTools": "/wg_tools"}]
+    if current_user.level >= 3:
+        tools_list.append({"UserManageTools": "/admin/users"})
+    return Tools(tools=tools_list)
 
 
-@app.get("/admin/users")
+@app.get("/admin/users", dependencies=[Depends(check_admin)])
 async def read_all_users(
-    current_user: Annotated[User, Depends(get_current_active_user)],
     db: Annotated[AsyncSession, Depends(get_db)]
 ) -> list[User]:
-    if current_user.level < 3:
-        raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Not Enough Role",
-                )
     return await get_all_user(db)
 
-@app.post("/admin/user/register")
+@app.post("/admin/user/register", dependencies=[Depends(check_admin)])
 async def register_user(
-    current_user: Annotated[User, Depends(get_current_active_user)],
     credentials: BrowserLogin,
     db: Annotated[AsyncSession, Depends(get_db)]
-) -> User:
-    if current_user.level < 3:
-        raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Not Enough Role",
-                )
+) -> Result:
     user = await get_user(db, credentials.username)
     if user is None:
         try:
-            result = await db.execute(
+            await db.execute(
                     insert(SystemUser).values(name=credentials.username, email=f"{credentials.username}@{DOMAIN}", password=get_password_hash(credentials.password), disabled=1).returning(SystemUser)
                 )
             await db.commit()
@@ -351,30 +145,18 @@ async def register_user(
             raise HTTPException(status_code=400, detail="Invalid username or password") from e
     else:
         raise HTTPException(status_code=400, detail="Invalid username or password")
-    add_user = result.scalar_one()
-    return User(
-            id=add_user.id,
-            displayname=add_user.name,
-            email=add_user.email,
-            disabled=bool(add_user.disabled),
-            level=add_user.level,
-        )
+    return Result(result="success")
 
-@app.post("/admin/user/{user_id}/enable")
+@app.post("/admin/user/{user_id}/enable", dependencies=[Depends(check_admin)])
 async def enable_user(
     user_id: int,
     current_user: Annotated[User, Depends(get_current_active_user)],
     db: Annotated[AsyncSession, Depends(get_db)]
-) -> User:
-    if current_user.level < 3:
-        raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Not Enough Role",
-                )
+) -> Result:
     user = await get_user_uid(db, user_id)
     if user is not None and user_id != current_user.id:
         try:
-            result = await db.execute(
+            await db.execute(
                     update(SystemUser).where(SystemUser.id==user_id).values(disabled=0).returning(SystemUser)
                 )
             await db.commit()
@@ -384,30 +166,18 @@ async def enable_user(
             raise
     else:
         raise HTTPException(status_code=400, detail="Invalid uid")
-    add_user = result.scalar_one()
-    return User(
-            id=add_user.id,
-            displayname=add_user.name,
-            email=add_user.email,
-            disabled=bool(add_user.disabled),
-            level=add_user.level,
-        )
+    return Result(result="success")
 
-@app.post("/admin/user/{user_id}/disable")
+@app.post("/admin/user/{user_id}/disable", dependencies=[Depends(check_admin)])
 async def disble_user(
     user_id: int,
     current_user: Annotated[User, Depends(get_current_active_user)],
     db: Annotated[AsyncSession, Depends(get_db)]
-) -> User:
-    if current_user.level < 3:
-        raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Not Enough Role",
-                )
+) -> Result:
     user = await get_user_uid(db, user_id)
     if user is not None and user_id != current_user.id:
         try:
-            result = await db.execute(
+            await db.execute(
                     update(SystemUser).where(SystemUser.id==user_id).values(disabled=1).returning(SystemUser)
                 )
             await db.commit()
@@ -417,31 +187,19 @@ async def disble_user(
             raise
     else:
         raise HTTPException(status_code=400, detail="Invalid uid")
-    add_user = result.scalar_one()
-    return User(
-            id=add_user.id,
-            displayname=add_user.name,
-            email=add_user.email,
-            disabled=bool(add_user.disabled),
-            level=add_user.level,
-        )
+    return Result(result="success")
 
-@app.post("/admin/user/{user_id}/update")
+@app.post("/admin/user/{user_id}/update", dependencies=[Depends(check_admin)])
 async def update_user(
     user_id: int,
     request: UpdateUserRequest,
     current_user: Annotated[User, Depends(get_current_active_user)],
     db: Annotated[AsyncSession, Depends(get_db)]
-) -> User:
-    if current_user.level < 3:
-        raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Not Enough Role",
-                )
+) -> Result:
     user = await get_user_uid(db, user_id)
     if user is not None and user_id != current_user.id:
         try:
-            result = await db.execute(
+            await db.execute(
                     update(SystemUser).where(SystemUser.id==user_id).values(name=request.displayName).returning(SystemUser)
                 )
             await db.commit()
@@ -451,27 +209,15 @@ async def update_user(
             raise
     else:
         raise HTTPException(status_code=400, detail="Invalid uid")
-    add_user = result.scalar_one()
-    return User(
-            id=add_user.id,
-            displayname=add_user.name,
-            email=add_user.email,
-            disabled=bool(add_user.disabled),
-            level=add_user.level,
-        )
+    return Result(result="success")
 
-@app.post("/admin/user/{user_id}/level")
+@app.post("/admin/user/{user_id}/level", dependencies=[Depends(check_admin)])
 async def update_user_level(
     user_id: int,
     request: UpdateUserLevelRequest,
     current_user: Annotated[User, Depends(get_current_active_user)],
     db: Annotated[AsyncSession, Depends(get_db)]
 ) -> User:
-    if current_user.level < 3:
-        raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Not Enough Role",
-                )
     user = await get_user_uid(db, user_id)
     if user is None or user_id == current_user.id:
         raise HTTPException(status_code=400, detail="Invalid uid")
@@ -488,7 +234,6 @@ async def update_user_level(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="At least one active administrator must remain",
             )
-
     try:
         result = await db.execute(
             update(SystemUser)
@@ -511,17 +256,11 @@ async def update_user_level(
         level=updated_user.level,
     )
 
-@app.post("/admin/user/{user_id}/reset")
+@app.post("/admin/user/{user_id}/reset", dependencies=[Depends(check_admin)])
 async def reset_pw_user(
     user_id: int,
-    current_user: Annotated[User, Depends(get_current_active_user)],
     db: Annotated[AsyncSession, Depends(get_db)]
-) -> User:
-    if current_user.level < 3:
-        raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Not Enough Role",
-                )
+) -> Result:
     user = await get_user_uid(db, user_id)
     if user is not None:
         try:
@@ -538,13 +277,7 @@ async def reset_pw_user(
     add_user = result.scalar_one()
     token = get_resettoken(add_user.email, add_user.updated_at)
     await send_email([add_user.email], "パスワードリセット", f"下記URLからパスワードリセットを行ってください。(発行から30分間有効です)\n{ os.environ.get('EXTERNAL_URL')}/reset?token={token}")
-    return User(
-            id=add_user.id,
-            displayname=add_user.name,
-            email=add_user.email,
-            disabled=bool(add_user.disabled),
-            level=add_user.level,
-        )
+    return Result(result="success")
 
 @app.post("/reset", include_in_schema=False)
 async def reset_password(request: ResetPasswordRequest,
