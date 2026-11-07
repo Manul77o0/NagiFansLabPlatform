@@ -1,6 +1,6 @@
 <script setup>
 import { ref, onMounted } from 'vue'
-import { api } from '../components/api'
+import { api, getCurrentUser } from '../components/api'
 import { useRoute, useRouter } from 'vue-router'
 import AuthLayout from '../components/AuthLayout.vue'
 
@@ -21,8 +21,7 @@ const isSubmitting = ref(false)
 
 const loadCurrentUser = async () => {
   try {
-    const response = await api.get('/api/users/me')
-    user.value = response.data
+    user.value = await getCurrentUser()
     isLoggedIn.value = true
     if (user.value.level >= 3) {
       isUserAdmin.value = true
@@ -48,6 +47,9 @@ const loadCurrentUser = async () => {
 const loadItems = async () => {
   try {
     const response = await api.get('/api/users/me/tools/')
+    if (!response.data || !Array.isArray(response.data.tools)) {
+      throw new Error('Invalid tools response')
+    }
     items.value = response.data
   } catch (error) {
     cmdisplayMsg.value = '通信エラーが発生しました、再度お試しください'
@@ -68,6 +70,7 @@ const handleLogin = async () => {
     const state = await loadCurrentUser()
     if (state === 'APIError'){
         formdisplayMsg.value = '通信エラーが発生しました、再度お試しください'
+        return
     }
     const redirectPath = route.query.redirect
     if (redirectPath && redirectPath.startsWith('/') && !redirectPath.startsWith('//')) {

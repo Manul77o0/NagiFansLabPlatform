@@ -157,6 +157,7 @@ async def logout_browser_session(response: Response) -> Result:
     return Result(result="success")
 
 
+@app.get("/users/me", include_in_schema=False)
 @app.get("/users/me/")
 async def read_users_me(
     current_user: Annotated[User, Depends(get_current_active_user)],

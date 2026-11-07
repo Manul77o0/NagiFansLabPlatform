@@ -48,7 +48,7 @@ class InitialSetupTests(unittest.IsolatedAsyncioTestCase):
         app.include_router(auth.app)
         app.dependency_overrides[get_db] = test_db
         self.client = AsyncClient(
-            transport=ASGITransport(app=app), base_url="http://test"
+            transport=ASGITransport(app=app), base_url="https://test"
         )
         self.token_patch = patch.dict(os.environ, {"INITIAL_SETUP_TOKEN": TOKEN})
         self.token_patch.start()
@@ -79,6 +79,14 @@ class InitialSetupTests(unittest.IsolatedAsyncioTestCase):
             json={"username": "administrator", "password": self.payload["password"]},
         )
         self.assertEqual(login.status_code, 204, login.text)
+        for path in ("/users/me", "/users/me/"):
+            current_user = await self.client.get(path, follow_redirects=False)
+            self.assertEqual(current_user.status_code, 200, current_user.text)
+            self.assertEqual(current_user.json()["displayname"], "administrator")
+            self.assertEqual(current_user.json()["level"], 3)
+        tools = await self.client.get("/users/me/tools/", follow_redirects=False)
+        self.assertEqual(tools.status_code, 200, tools.text)
+        self.assertIn({"UserManageTools": "/admin/users"}, tools.json()["tools"])
         second = await self.client.post("/setup/initial-admin", json=self.payload)
         self.assertEqual(second.status_code, 409)
 

@@ -4,7 +4,7 @@ import ResetPasswordView from '../views/ResetPasswordView.vue'
 import AdminUsersView from '../views/AdminUsersView.vue'
 import ItemsView from '../views/ItemsView.vue'
 import InitialSetupView from '../views/InitialSetupView.vue'
-import { api } from '../components/api'
+import { getCurrentUser } from '../components/api'
 
 const routes = [
   {
@@ -56,8 +56,7 @@ const router = createRouter({
 router.beforeEach(async (to, from) => {
   if (to.meta.requiresUser || to.meta.requiresAdmin){
     try {
-      const response = await api.get('/api/users/me')
-      const user = response.data
+      const user = await getCurrentUser()
       if (user && user.level >= 3) {
         return true
       } else if (user) {

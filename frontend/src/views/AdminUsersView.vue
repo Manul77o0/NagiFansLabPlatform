@@ -1,7 +1,7 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { api } from '../components/api'
+import { api, getCurrentUser } from '../components/api'
 import CustomPromptModal from './CustomPromptModal.vue'
 import UserRoleModal from './UserRoleModal.vue'
 
@@ -75,10 +75,9 @@ const handleRoleSuccess = (updatedUser) => {
 
 const loadCurrentUser = async () => {
   try {
-    const response = await api.get('/api/users/me')
-    user.value = response.data
+    user.value = await getCurrentUser()
     isLoggedIn.value = true
-    isUserAdmin.value = response.data.level >= 3
+    isUserAdmin.value = user.value.level >= 3
     return isUserAdmin.value ? 'Admin' : 'User'
   } catch (error) {
     if (error.response?.status === 401 || error.response?.status === 400) {

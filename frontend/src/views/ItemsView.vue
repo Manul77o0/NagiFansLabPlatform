@@ -1,7 +1,7 @@
 <script setup>
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
-import { api } from '../components/api'
+import { api, getCurrentUser } from '../components/api'
 
 const route = useRoute()
 const router = useRouter()
@@ -480,8 +480,7 @@ const handleLogout = async () => {
 
 onMounted(async () => {
   try {
-    const response = await api.get('/api/users/me')
-    user.value = response.data
+    user.value = await getCurrentUser()
     await loadSection()
   } catch (error) {
     if (error.response?.status === 401) {
