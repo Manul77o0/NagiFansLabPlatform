@@ -308,7 +308,7 @@ async def read_usable_tools(
     if current_user.level < 3:
         return {"tools": [{"WireGuardTools": "/wg_tools"}], "owner": current_user.email}
     elif current_user.level == 3:
-        return {"tools": [{"WireGuardTools": "/wg_tools"}, {"users": "/admin/users"}], "owner": current_user.email}
+        return {"tools": [{"WireGuardTools": "/wg_tools"}, {"UserManageTools": "/admin/users"}], "owner": current_user.email}
     return {"tools": [],  "owner": current_user.email}
 
 
