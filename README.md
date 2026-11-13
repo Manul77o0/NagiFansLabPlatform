@@ -26,6 +26,11 @@ npm install
 npm run dev
 ```
 
+On a fresh database, set `INITIAL_SETUP_TOKEN` in `.env` to a random value of
+at least 32 characters and restart the API. Open the frontend's `/setup` page
+and use that token to create the first administrator. After setup, remove
+the token from `.env` and restart the API again.
+
 For local integration tests, see [docs/local-integration-tests.md](docs/local-integration-tests.md).
 
 ## Configuration and deployment
