@@ -6,6 +6,10 @@ FastAPI backend and Vue frontend for the NagiFans Lab platform.
 
 Requirements: Python 3.12+, [uv](https://docs.astral.sh/uv/), and Node.js.
 
+Before starting the API, copy `.env.sample` to `.env`. Set `SECRET_KEY` to a
+random secret (for example, generate one with `openssl rand -hex 32`), and
+configure the database, domain, and mail settings for your environment.
+
 Start the API:
 
 ```bash
